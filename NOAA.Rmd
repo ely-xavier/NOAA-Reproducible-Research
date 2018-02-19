@@ -1,0 +1,139 @@
+---
+title: "Exploring the U.S. National Oceanic and Atmospheric Administion's (NOAA) storm database"
+author: "Ely Xavier"
+date: "February 17, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction 
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+## Synopsis
+
+The analysis on NOAA's storm event database revealed that tornadoes are the most dangerous weather event to the population's health in terms of fatalities and total injuries. On the other hand, flash floods had the highest economic impact of weather events and caused billions of dollars in property damages between 1950 and 2011. 
+
+## Downloading and loading the dataset and libraries
+
+### Load the required libraries
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+library(R.utils)
+```
+
+### Downloading and reading data
+
+Use cache=TRUE when starting this code block
+
+```{r data download, cache=TRUE}
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(url, "StormData.csv.bz2")
+
+if (!exists("StormData.csv")) {
+    # Extract file if not already extracted
+    if (file.exists("StormData.csv.bz2")) {
+        if (!file.exists("StormData.csv")) {
+            bunzip2("StormData.csv.bz2", "StormData.csv", overwrite = F)
+        }
+
+}
+    }
+```
+
+```{r data read, cache=TRUE}
+StormData <- read.csv("StormData.csv", sep = ",")
+```
+
+### Summary of the dataset
+
+```{r data head, cache=TRUE}
+head(StormData)
+```
+
+## Data Processing
+
+### Public Health (fatalities and injuries)
+
+Health impact, total fatalities and the total injuries for each event type (EVTYPE), are calculated below. The code blocks for these calculations are shown as follow.
+
+``` {r fatalities}
+StormData.fatalities <- StormData %>% select(EVTYPE, FATALITIES) %>% group_by(EVTYPE) %>% summarise(total.fatalities = sum(FATALITIES)) %>% arrange(-total.fatalities)
+head(StormData.fatalities)
+```
+
+```{r injuries}
+StormData.injuries <- StormData %>% select(EVTYPE, INJURIES) %>% group_by(EVTYPE) %>% summarise(total.injuries = sum(INJURIES)) %>% arrange(-total.injuries)
+head(StormData.injuries)
+```
+
+### Economic Impact
+
+The data provides two types of economic impact; property damage (PROPDMG) and crop damage (CROPDMG). The actual damage is in $USD, indicated by PROPDMGEXP and CROPDMGEXP parameters. According to this [link](https://rstudio-pubs-static.s3.amazonaws.com/58957_37b6723ee52b455990e149edde45e5b6.html), the index in the PROPDMGEXP and CROPDMGEXP can be interpreted as the following:
+
+* H,h,K,k,M,m,B,b,+,-,?,0,1,2,3,4,5,6,7,8, and blank-character
+* H,h = hundreds = 100
+* K,k = kilos = thousands = 1,000
+* M,m = millions = 1,000,000
+* B,b = billions = 1,000,000,000
+* (+) = 1
+* (-) = 0
+* (?) = 0
+* black/empty character = 0
+* numeric 0..8 = 10
+
+The total damage caused by each event type is calculated by the following code.
+
+```{r economic impact}
+StormData.damage <- StormData %>% select(EVTYPE, PROPDMG,PROPDMGEXP,CROPDMG,CROPDMGEXP)
+
+Symbol <- sort(unique(as.character(StormData.damage$PROPDMGEXP)))
+Multiplier <- c(0,0,0,1,10,10,10,10,10,10,10,10,10,10^9,10^2,10^2,10^3,10^6,10^6)
+convert.Multiplier <- data.frame(Symbol, Multiplier)
+
+StormData.damage$Prop.Multiplier <- convert.Multiplier$Multiplier[match(StormData.damage$PROPDMGEXP, convert.Multiplier$Symbol)]
+StormData.damage$Crop.Multiplier <- convert.Multiplier$Multiplier[match(StormData.damage$CROPDMGEXP, convert.Multiplier$Symbol)]
+
+StormData.damage <- StormData.damage %>% mutate(PROPDMG = PROPDMG*Prop.Multiplier) %>% mutate(CROPDMG = CROPDMG*Crop.Multiplier) %>% mutate(TOTAL.DMG = PROPDMG+CROPDMG)
+
+StormData.damage.total <- StormData.damage %>% group_by(EVTYPE) %>% summarize(TOTAL.DMG.EVTYPE = sum(TOTAL.DMG))%>% arrange(-TOTAL.DMG.EVTYPE) 
+
+head(StormData.damage.total)
+```
+
+## Results
+
+### Health Impact
+
+The following code block and plot shows the top ten events with the highest total fatalities and injuries.
+
+```{r fatalities plot, message=FALSE, warning=FALSE}
+fatal.plot <- ggplot(StormData.fatalities[1:10,], aes(x=reorder(EVTYPE, -total.fatalities), y=total.fatalities))+geom_bar(stat="identity") + theme(axis.text.x = element_text(angle=90, vjust=0.5, hjust=1))+ggtitle("Top Ten Events with Highest Total Fatalities") +labs(x="Event Type", y="Total Fatalities")
+fatal.plot
+```
+
+```{r injuries plot, message=FALSE, warning=FALSE}
+injury.plot <- ggplot(StormData.injuries[1:10,], aes(x=reorder(EVTYPE, -total.injuries), y=total.injuries))+geom_bar(stat="identity") + theme(axis.text.x = element_text(angle=90, vjust=0.5, hjust=1))+ggtitle("Top Ten Events with Highest Total Injuries") +labs(x="Event Type", y="Total Injuries")
+injury.plot
+```
+
+As shown in the previous two plots, tornados cause the highest rate of fatalities and injuries.
+
+### Economic Impact
+
+The following code block and plot shows the top ten events with the highest economic impact.
+
+```{r economic plot}
+economic.plot <- ggplot(StormData.damage.total[1:10,], aes(x=reorder(EVTYPE, -TOTAL.DMG.EVTYPE), y=TOTAL.DMG.EVTYPE))+geom_bar(stat="identity") + theme(axis.text.x = element_text(angle=90, vjust=0.5, hjust=1))+ggtitle("Top Ten Events with Highest Economic Impact") +labs(x="Event Type", y="Total Economic Impact (USD)")
+economic.plot
+```
+
+As shown in the previous plot, floods cause the highest economic impact, at almost 150 billion USD for the data and timeframe analyzed. The second highest economic impact is caused by hurricanes/typhoons, at about 70 billion USD. 
